@@ -21,11 +21,9 @@ class WpilogReader:
         return
 
     def close(self) -> None:
-        if self.mm:
+        if self.mm is not None:
             self.mm.close()
-        if self.logreader:
-            self.logreader.close()
-        if self.strm:
+        if self.strm is not None:
             self.strm.close()
         return
 
