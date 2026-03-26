@@ -214,9 +214,9 @@ class DSLogParser():
             return None
         pd_type_int = self.uint_from_bytes(metadata, 3*8, 8)
         logging.debug(f"pd_type_int = {pd_type_int}")
-        pd_type = self.pd_type_lookup.get(self.uint_from_bytes(metadata, 3*8, 8), 'none')
-        if pd_type == 'none':
-            raise Exception("Unknown PD type")
+        pd_type = self.pd_type_lookup.get(self.uint_from_bytes(metadata, 3*8, 8), None)
+        if pd_type is None:
+            raise Exception(f"Unknown PD type with int value {pd_type_int}")
         
         res = {
             'pd_id': self.uint_from_bytes(metadata, 0, 8),
@@ -229,7 +229,7 @@ class DSLogParser():
             res.update(self.read_ctre_pdp_data())
     
         res['pd_total_current'] = 0.0
-        for i in res['pd_currents']:
+        for i in res.get('pd_currents', []):
             res['pd_total_current'] += i
 
         return res
