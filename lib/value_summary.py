@@ -61,13 +61,17 @@ class ValueSummary:
 
     def __getattr__(self, key):
         if key == 'avg':
-            return self._total / self.count if self.count > 0 else 0.0
+            return self._total / self.count if self.count > 0 else None
         elif key == 'time_avg':
-            return self.integral / self.total_time if self.total_time > 0 else 0.0
+            return self.integral / self.total_time if self.total_time > 0 else None
         elif key == 'percent95':
-            return numpy.percentile(self.values, 95) if self.values is not None else None
+            if self.values and len(self.values) > 3:
+                return numpy.percentile(self.values, 95)
+            return None
         elif key == 'percent5':
-            return numpy.percentile(self.values, 5) if self.values is not None else None
+            if self.values and len(self.values) > 3:
+                return numpy.percentile(self.values, 5)
+            return None
         raise AttributeError(f"{self.__class__.__name__} has no attribute {key}")
 
     def __str__(self):

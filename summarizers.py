@@ -6,14 +6,32 @@ from lib.value_summary import ValueSummary
 
 
 class Summarizer:
-    def __init__(self, enabled_only, filename):
+    def __init__(self, filename, filetype, enabled_only=True):
         self.filename = filename
+        self.filetype = filetype
         self.enabled_only = enabled_only
         self.point_summaries = {}
         self.timestamp_name = None
-        self.enabled_func = None
+
+        if filetype == 'dslog':
+            self.enabled_func = Summarizer.dslogEnabled
+        elif filetype == 'hoot':
+            self.enabled_func = Summarizer.hootEnabled
+        else:
+            print("Unsupported filetype", filetype, file=sys.stderr)
+            sys.exit(12)
+
         self.values = []
         return
+
+    @staticmethod
+    def dslogEnabled(event):
+        disabled = event.get('ds_disabled', None)
+        return not disabled if disabled is not None else None
+
+    @staticmethod
+    def hootEnabled(event):
+        return event.get('RobotEnable', None)
 
     def check_new_columns(self, events):
         return
@@ -63,8 +81,8 @@ class Summarizer:
 
 
 class DsLogSummarizer(Summarizer):
-    def __init__(self, enabled_only, filename):
-        super().__init__(enabled_only, filename)
+    def __init__(self, filename, filetype, enabled_only):
+        super().__init__(filename, filetype, enabled_only)
         self.timestamp_name = 'file_time'
         self.values = [
             ('round_trip_time', 'number'),
@@ -84,11 +102,6 @@ class DsLogSummarizer(Summarizer):
         self.intake_motors_pd = (6,)
         return
 
-    @staticmethod
-    def enabled(event):
-        disabled = event.get('ds_disabled', None)
-        return not disabled if disabled is not None else None
-
     def print_summary(self):
         super().print_summary()
 
@@ -103,13 +116,14 @@ class DsLogSummarizer(Summarizer):
         print(f'feed motors:  {tot_ah:.3f} Ah')
         tot_ah = sum([self.summary_value(f'pd_currents[{chan}]').amp_hours for chan in self.intake_motors_pd])
         print(f'intake motor:  {tot_ah:.3f} Ah')
+        return
+    
 
-
-class HootSummarizer(Summarizer):
-    def __init__(self, enabled_only, filename):
-        super().__init__(enabled_only, filename)
+class HootCurrentSummarizer(Summarizer):
+    MAX_CAN_ID = 30
+    def __init__(self, filename, filetype, enabled_only):
+        super().__init__(filename, filetype, enabled_only)
         self.timestamp_name = 'timestamp'
-        self.enabled_func = HootSummarizer.enabled
 
         # currents
         self.device_type = 'TalonFX'
@@ -118,7 +132,7 @@ class HootSummarizer(Summarizer):
 
         self.values = []
         # just add call CAN IDs, extras won't be found, so will be ignored
-        for canid in range(1, 23):
+        for canid in range(1, self.MAX_CAN_ID):
             self.values.append((f'Phoenix6/{self.device_type}-{canid}/{self.supply_current}', 'current'))
             self.values.append((f'Phoenix6/{self.device_type}-{canid}/{self.stator_current}', 'current'))
 
@@ -129,45 +143,23 @@ class HootSummarizer(Summarizer):
         self.intake_motors_can = (17,)
         return
 
-    @staticmethod
-    def enabled(event):
-        return event.get('RobotEnable', None)
-
     def print_summary(self):
-        # super().print_summary()
-
-        # print()
-        # tot_ah = sum([self.summary_value(f'Phoenix6/TalonFX-{canid}/{self.supply_current}').amp_hours for canid in self.drive_devices_can])
-        # print(f'drive motors:  {tot_ah:.3f} Ah')
-        # tot_ah = sum([self.summary_value(f'Phoenix6/self.device_type-{canid}/{self.supply_current}').amp_hours for canid in self.steer_motors_can])
-        # print(f'steer motors:  {tot_ah:.3f} Ah')
-        # tot_ah = sum([self.summary_value(f'Phoenix6/self.device_type-{canid}/{self.supply_current}').amp_hours for canid in self.fly_motors_can])
-        # print(f'fly motors:   {tot_ah:.3f} Ah')
-        # tot_ah = sum([self.summary_value(f'Phoenix6/self.device_type-{canid}/{self.supply_current}').amp_hours for canid in self.feed_motors_can])
-        # print(f'feed motors:  {tot_ah:.3f} Ah')
-        # tot_ah = sum([self.summary_value(f'Phoenix6/self.device_type-{canid}/{self.supply_current}').amp_hours for canid in self.intake_motors_can])
-        # print(f'intake motor:  {tot_ah:.3f} Ah')
-
         print(','.join(('Filename', 'Property', 'Value')))
 
-        for canid in range(1, 23):
+        for canid in range(1, self.MAX_CAN_ID):
             for prop in (self.supply_current, self.stator_current):
                 name = f'Phoenix6/{self.device_type}-{canid}/{prop}'
                 val = self.summary_value(name)
                 if val is not None:
                     print(','.join((self.filename, name + '.max', str(val.max))))
                     print(','.join((self.filename, name + '.percent95', str(val.percent95))))
+        return
+    
 
-        # # Drive motor numbers
-        # print('\nDrive Motor Ah')
-        # print(','.join([str(self.summary_value(f'Phoenix6/{self.device_type}-{canid}/{self.supply_current}').amp_hours) for canid in self.drive_motors_can]))
-
-
-class CTRFaultSummarizer(Summarizer):
-    def __init__(self, enabled_only, filename):
-        super().__init__(enabled_only, filename)
+class FaultSummarizer(Summarizer):
+    def __init__(self, filename, filetype, enabled_only):
+        super().__init__(filename, filetype, enabled_only)
         self.timestamp_name = 'timestamp'
-        self.enabled_func = HootSummarizer.enabled
 
         self.columns_added = set()
         return
@@ -190,18 +182,3 @@ class CTRFaultSummarizer(Summarizer):
             if tt > 0:
                 print(f"{point}: {summary}")
         return
-
-# def print_summary(self):
-    #     print(','.join(('Filename', 'Property', 'Value')))
-
-    #     for canid in range(1, 23):
-    #         for prop in (self.supply_current, self.stator_current):
-    #             name = f'Phoenix6/{self.device_type}-{canid}/{prop}'
-    #             val = self.summary_value(name)
-    #             if val is not None:
-    #                 print(','.join((self.filename, name + '.max', str(val.max))))
-    #                 print(','.join((self.filename, name + '.percent95', str(val.percent95))))
-
-    #     # # Drive motor numbers
-    #     # print('\nDrive Motor Ah')
-    #     # print(','.join([str(self.summary_value(f'Phoenix6/{self.device_type}-{canid}/{self.supply_current}').amp_hours) for canid in self.drive_motors_can]))
